@@ -1,65 +1,57 @@
-"""Core diff logic for comparing two CSV datasets."""
+"""Core diffing logic for CSV data indexed by key columns."""
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Dict, List, Tuple, Any
 
 
 @dataclass
 class DiffResult:
-    added: list[dict[str, Any]] = field(default_factory=list)
-    removed: list[dict[str, Any]] = field(default_factory=list)
-    modified: list[dict[str, Any]] = field(default_factory=list)
+    added: Dict[Tuple, Dict[str, str]] = field(default_factory=dict)
+    removed: Dict[Tuple, Dict[str, str]] = field(default_factory=dict)
+    modified: Dict[Tuple, Tuple[Dict[str, str], Dict[str, str]]] = field(
+        default_factory=dict
+    )
 
-    @property
     def has_changes(self) -> bool:
         return bool(self.added or self.removed or self.modified)
 
     def summary(self) -> str:
-        return (
-            f"Added: {len(self.added)}, "
-            f"Removed: {len(self.removed)}, "
-            f"Modified: {len(self.modified)}"
-        )
+        parts = []
+        if self.added:
+            parts.append(f"+{len(self.added)} added")
+        if self.removed:
+            parts.append(f"-{len(self.removed)} removed")
+        if self.modified:
+            parts.append(f"~{len(self.modified)} modified")
+        return ", ".join(parts) if parts else "no changes"
+
+
+def has_changes(result: DiffResult) -> bool:
+    return result.has_changes()
+
+
+def summary(result: DiffResult) -> str:
+    return result.summary()
 
 
 def diff(
-    left: dict[tuple, dict[str, Any]],
-    right: dict[tuple, dict[str, Any]],
-    columns: list[str] | None = None,
+    left: Dict[Tuple, Dict[str, str]],
+    right: Dict[Tuple, Dict[str, str]],
 ) -> DiffResult:
-    """Compare two indexed CSV datasets and return a DiffResult.
-
-    Args:
-        left: Row dict indexed by key tuples (from CSVReader.load).
-        right: Row dict indexed by key tuples (from CSVReader.load).
-        columns: Optional list of columns to restrict comparison to.
-
-    Returns:
-        DiffResult with added, removed, and modified rows.
-    """
-    result = DiffResult()
-
+    """Compute the diff between two indexed CSV datasets."""
     left_keys = set(left.keys())
     right_keys = set(right.keys())
 
-    for key in right_keys - left_keys:
-        result.added.append(right[key])
+    added_keys = right_keys - left_keys
+    removed_keys = left_keys - right_keys
+    common_keys = left_keys & right_keys
 
-    for key in left_keys - right_keys:
-        result.removed.append(left[key])
+    added = {k: right[k] for k in added_keys}
+    removed = {k: left[k] for k in removed_keys}
+    modified = {
+        k: (left[k], right[k])
+        for k in common_keys
+        if left[k] != right[k]
+    }
 
-    for key in left_keys & right_keys:
-        left_row = left[key]
-        right_row = right[key]
-        compare_cols = columns if columns else list(left_row.keys())
-        changes = {
-            col: {"old": left_row.get(col), "new": right_row.get(col)}
-            for col in compare_cols
-            if left_row.get(col) != right_row.get(col)
-        }
-        if changes:
-            result.modified.append(
-                {"key": key, "changes": changes, "row": right_row}
-            )
-
-    return result
+    return DiffResult(added=added, removed=removed, modified=modified)
