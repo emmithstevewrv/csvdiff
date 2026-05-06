@@ -72,6 +72,19 @@ def test_validate_keys_unique_with_none_sentinel():
     assert any("Duplicate" in e.message for e in result.errors)
 
 
+def test_validate_keys_unique_side_label_in_error():
+    """Ensure the side label ('left' or 'right') appears in duplicate key error messages."""
+    v = CSVValidator(key_columns=["id"])
+    index = {("1",): None, ("2",): {"id": "2", "name": "Bob"}}
+    for side in ("left", "right"):
+        result = v.validate_keys_unique(index, side)
+        assert not result.is_valid
+        assert any(side in e.message for e in result.errors), (
+            f"Expected side label '{side}' in error messages, got: "
+            f"{[e.message for e in result.errors]}"
+        )
+
+
 def test_validation_result_str_on_failure():
     result = ValidationResult()
     result.add_error("Something went wrong", column="col1")
