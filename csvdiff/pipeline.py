@@ -1,78 +1,86 @@
-"""End-to-end diff pipeline orchestrating reader, filter, sorter, differ, and validator."""
+"""End-to-end diff pipeline wiring reader → filter → diff → reporter."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from typing import List, Optional
 
-from csvdiff.reader import CSVReader
+from csvdiff.differ import DiffResult, diff
 from csvdiff.filter import ColumnFilter
-from csvdiff.sorter import RowSorter
-from csvdiff.differ import diff, DiffResult
-from csvdiff.validator import CSVValidator
-from csvdiff.reporter import compute_stats, ReportStats
+from csvdiff.reader import CSVReader
+from csvdiff.reporter import ReportStats, compute_stats
+from csvdiff.validator import ValidationResult, validate
+
+
+@dataclass
+class PipelineConfig:
+    left_path: str
+    right_path: str
+    key_columns: List[str]
+    include_columns: Optional[List[str]] = None
+    exclude_columns: Optional[List[str]] = None
+    encoding: str = "utf-8"
+    delimiter: str = ","
+
+
+@dataclass
+class PipelineResult:
+    diff: DiffResult
+    stats: ReportStats
+    validation: ValidationResult
+    headers: List[str] = field(default_factory=list)
 
 
 class DiffPipeline:
-    """Orchestrates the full CSV diff workflow."""
+    """Orchestrates the full diff workflow."""
 
-    def __init__(
-        self,
-        left_path: str,
-        right_path: str,
-        key_columns: List[str],
-        include_columns: Optional[List[str]] = None,
-        exclude_columns: Optional[List[str]] = None,
-        sort_keys: Optional[List[str]] = None,
-        sort_reverse: bool = False,
-        validate: bool = True,
-    ):
-        self.left_path = left_path
-        self.right_path = right_path
-        self.key_columns = key_columns
-        self.include_columns = include_columns
-        self.exclude_columns = exclude_columns
-        self.sort_keys = sort_keys
-        self.sort_reverse = sort_reverse
-        self.validate = validate
+    def __init__(self, config: PipelineConfig) -> None:
+        self.config = config
 
-    def run(self) -> DiffResult:
-        reader = CSVReader(key_columns=self.key_columns)
-        left_headers, left_index = reader.load(self.left_path)
-        right_headers, right_index = reader.load(self.right_path)
+    # ------------------------------------------------------------------
+    def run(self) -> PipelineResult:
+        cfg = self.config
 
-        if self.validate:
-            validator = CSVValidator(key_columns=self.key_columns)
-            header_result = validator.validate_headers(left_headers, right_headers)
-            if not header_result.is_valid:
-                raise ValueError(str(header_result))
+        reader = CSVReader(
+            key_columns=cfg.key_columns,
+            encoding=cfg.encoding,
+            delimiter=cfg.delimiter,
+        )
 
-            for label, index in (("left", left_index), ("right", right_index)):
-                key_result = validator.validate_keys_unique(index, label)
-                if not key_result.is_valid:
-                    raise ValueError(str(key_result))
+        left_headers, left_index = reader.load(cfg.left_path)
+        right_headers, right_index = reader.load(cfg.right_path)
+
+        # Validate before filtering so we can report structural issues.
+        validation = validate(
+            left_headers=left_headers,
+            right_headers=right_headers,
+            key_columns=cfg.key_columns,
+        )
 
         col_filter = ColumnFilter(
-            headers=left_headers,
-            include=self.include_columns,
-            exclude=self.exclude_columns,
+            include=cfg.include_columns,
+            exclude=cfg.exclude_columns,
         )
-        active_headers = col_filter.apply_headers()
+        headers = col_filter.apply_headers(left_headers)
 
-        left_index = {k: col_filter.apply_row(row) for k, row in left_index.items()}
-        right_index = {k: col_filter.apply_row(row) for k, row in right_index.items()}
+        left_index = {
+            k: col_filter.apply_row(row) for k, row in left_index.items()
+        }
+        right_index = {
+            k: col_filter.apply_row(row) for k, row in right_index.items()
+        }
 
-        if self.sort_keys:
-            sorter = RowSorter(sort_keys=self.sort_keys, reverse=self.sort_reverse)
-            left_index = sorter.sort_index(left_index)
-            right_index = sorter.sort_index(right_index)
+        diff_result = diff(left_index, right_index)
+        stats = compute_stats(diff_result, total_rows=len(left_index))
 
-        result = diff(
-            left_index=left_index,
-            right_index=right_index,
-            headers=active_headers,
+        return PipelineResult(
+            diff=diff_result,
+            stats=stats,
+            validation=validation,
+            headers=headers,
         )
-        return result
 
-    def run_with_stats(self) -> tuple:
-        """Run the pipeline and return (DiffResult, ReportStats)."""
-        result = self.run()
-        stats = compute_stats(result)
-        return result, stats
+    # ------------------------------------------------------------------
+    def run_with_stats(self) -> PipelineResult:
+        """Alias kept for backward compatibility."""
+        return self.run()
