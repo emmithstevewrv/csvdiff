@@ -1,51 +1,63 @@
-"""JSON and CSV encoding utilities for diff output serialization."""
+"""JSON and CSV encoding/decoding for DiffResult objects."""
 
-import csv
-import io
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from csvdiff.differ import DiffResult
 
 
-def to_json(result: DiffResult, indent: Optional[int] = 2) -> str:
-    """Serialize a DiffResult to a JSON string."""
-    payload = {
-        "added": list(result.added.values()),
-        "removed": list(result.removed.values()),
-        "modified": [
-            {"key": list(k) if isinstance(k, tuple) else k, "before": before, "after": after}
-            for k, (before, after) in result.modified.items()
-        ],
+def to_json(result: DiffResult) -> Dict[str, Any]:
+    """Serialize a DiffResult to a plain dict suitable for JSON output."""
+    modified_out = {}
+    for key, (before, after) in result.modified.items():
+        modified_out[key] = {"before": before, "after": after}
+    return {
+        "added": result.added,
+        "removed": result.removed,
+        "modified": modified_out,
     }
-    return json.dumps(payload, indent=indent, default=str)
 
 
-def from_json(text: str) -> Dict[str, Any]:
-    """Deserialize a JSON string back to a raw diff dict."""
-    return json.loads(text)
+def from_json(data: Dict[str, Any]) -> DiffResult:
+    """Deserialize a DiffResult from a plain dict (as produced by to_json)."""
+    modified = {
+        key: (entry["before"], entry["after"])
+        for key, entry in data.get("modified", {}).items()
+    }
+    return DiffResult(
+        added=data.get("added", {}),
+        removed=data.get("removed", {}),
+        modified=modified,
+    )
 
 
 def added_to_csv(result: DiffResult, headers: List[str]) -> str:
-    """Render the added rows of a DiffResult as a CSV string."""
-    return _rows_to_csv(list(result.added.values()), headers)
+    """Return added rows as a CSV string."""
+    lines = [",".join(headers)]
+    for row in result.added.values():
+        lines.append(",".join(str(row.get(h, "")) for h in headers))
+    return "\n".join(lines) + "\n"
 
 
 def removed_to_csv(result: DiffResult, headers: List[str]) -> str:
-    """Render the removed rows of a DiffResult as a CSV string."""
-    return _rows_to_csv(list(result.removed.values()), headers)
+    """Return removed rows as a CSV string."""
+    lines = [",".join(headers)]
+    for row in result.removed.values():
+        lines.append(",".join(str(row.get(h, "")) for h in headers))
+    return "\n".join(lines) + "\n"
 
 
 def modified_after_to_csv(result: DiffResult, headers: List[str]) -> str:
-    """Render the 'after' state of modified rows as a CSV string."""
-    rows = [after for _before, after in result.modified.values()]
-    return _rows_to_csv(rows, headers)
+    """Return the 'after' state of modified rows as a CSV string."""
+    lines = [",".join(headers)]
+    for _before, after in result.modified.values():
+        lines.append(",".join(str(after.get(h, "")) for h in headers))
+    return "\n".join(lines) + "\n"
 
 
-def _rows_to_csv(rows: List[Dict[str, str]], headers: List[str]) -> str:
-    """Convert a list of row dicts to a CSV string with the given headers."""
-    buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore", lineterminator="\n")
-    writer.writeheader()
-    writer.writerows(rows)
-    return buf.getvalue()
+def modified_before_to_csv(result: DiffResult, headers: List[str]) -> str:
+    """Return the 'before' state of modified rows as a CSV string."""
+    lines = [",".join(headers)]
+    for before, _after in result.modified.values():
+        lines.append(",".join(str(before.get(h, "")) for h in headers))
+    return "\n".join(lines) + "\n"
