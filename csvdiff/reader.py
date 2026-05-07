@@ -32,6 +32,7 @@ class CSVReader:
         Raises:
             FileNotFoundError: If the file does not exist.
             KeyError: If any key column is missing from the CSV headers.
+            ValueError: If duplicate keys are detected in the CSV file.
         """
         filepath = Path(filepath)
         if not filepath.exists():
@@ -54,6 +55,11 @@ class CSVReader:
 
             for row in reader:
                 key = tuple(row[col] for col in self.key_columns)
+                if key in index:
+                    raise ValueError(
+                        f"Duplicate key {key} found in '{filepath.name}'. "
+                        "Key columns must uniquely identify each row."
+                    )
                 index[key] = dict(row)
 
         return headers, index
