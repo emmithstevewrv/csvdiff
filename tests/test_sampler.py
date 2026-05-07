@@ -84,3 +84,17 @@ def test_seed_produces_reproducible_results(big_result: DiffResult) -> None:
     assert set(s1.added.keys()) == set(s2.added.keys())
     assert set(s1.removed.keys()) == set(s2.removed.keys())
     assert set(s1.modified.keys()) == set(s2.modified.keys())
+
+
+def test_different_seeds_produce_different_results(big_result: DiffResult) -> None:
+    """Verify that two different seeds yield different samples (with high probability)."""
+    s1 = DiffSampler(seed=1).sample(big_result, n=5)
+    s2 = DiffSampler(seed=2).sample(big_result, n=5)
+    # It is astronomically unlikely that two independent random samples of 5
+    # from 20 items produce identical key sets for all three categories.
+    all_same = (
+        set(s1.added.keys()) == set(s2.added.keys())
+        and set(s1.removed.keys()) == set(s2.removed.keys())
+        and set(s1.modified.keys()) == set(s2.modified.keys())
+    )
+    assert not all_same
