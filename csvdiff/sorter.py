@@ -36,11 +36,7 @@ class RowSorter:
         if not self.sort_keys:
             return list(rows)
 
-        missing = [k for k in self.sort_keys if k not in headers]
-        if missing:
-            raise KeyError(
-                f"Sort key(s) not found in headers: {missing}"
-            )
+        self._validate_keys(headers)
 
         return sorted(
             rows,
@@ -60,3 +56,16 @@ class RowSorter:
             List of (key_tuple, row_dict) sorted by key tuple.
         """
         return sorted(index.items(), key=lambda item: item[0], reverse=self.reverse)
+
+    def _validate_keys(self, headers: List[str]) -> None:
+        """Raise KeyError if any configured sort keys are absent from headers.
+
+        Args:
+            headers: Available column headers to validate against.
+
+        Raises:
+            KeyError: If one or more sort keys are not present in headers.
+        """
+        missing = [k for k in self.sort_keys if k not in headers]
+        if missing:
+            raise KeyError(f"Sort key(s) not found in headers: {missing}")
