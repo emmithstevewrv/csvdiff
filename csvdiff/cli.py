@@ -39,6 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_csv(path: str, key_cols: list[str] | None) -> tuple:
+    """Load a CSV file and return (headers, data), raising SystemExit on error."""
+    reader = CSVReader(path, key_columns=key_cols)
+    return reader.load()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -46,11 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     key_cols = args.keys or None  # None → reader defaults to first column
 
     try:
-        left_reader = CSVReader(args.left, key_columns=key_cols)
-        left_headers, left_data = left_reader.load()
-
-        right_reader = CSVReader(args.right, key_columns=key_cols)
-        right_headers, right_data = right_reader.load()
+        left_headers, left_data = _load_csv(args.left, key_cols)
+        right_headers, right_data = _load_csv(args.right, key_cols)
     except FileNotFoundError as exc:
         print(f"csvdiff: error: {exc}", file=sys.stderr)
         return 2
