@@ -80,3 +80,17 @@ def test_sort_rows_does_not_mutate_original():
     sorter = RowSorter(sort_keys=["name"])
     sorter.sort_rows(ROWS, HEADERS)
     assert ROWS == original
+
+
+def test_sort_empty_rows_returns_empty():
+    """Sorting an empty list of rows should return an empty list without error."""
+    sorter = RowSorter(sort_keys=["id"])
+    result = sorter.sort_rows([], HEADERS)
+    assert result == []
+
+
+def test_sort_empty_index_returns_empty():
+    """Sorting an empty index should return an empty list without error."""
+    sorter = RowSorter()
+    result = sorter.sort_index({})
+    assert result == []
